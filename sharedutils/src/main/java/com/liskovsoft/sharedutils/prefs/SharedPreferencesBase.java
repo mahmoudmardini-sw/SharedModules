@@ -151,8 +151,14 @@ public class SharedPreferencesBase {
         // Migrate to plain files
         if (data == null) {
             data = getString(key, null);
-            putString(key, null);
-            setData(key, data);
+            if (data != null) {
+                File destination = getStorageFile(key);
+                FileHelpers.stringToFile(data, destination);
+                // Only delete from SharedPreferences after successful file write
+                if (destination.exists() && destination.length() > 0) {
+                    putString(key, null);
+                }
+            }
         }
 
         return data;
