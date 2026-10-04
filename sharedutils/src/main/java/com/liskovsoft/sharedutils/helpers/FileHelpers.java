@@ -387,6 +387,51 @@ public class FileHelpers {
         streamToFile(toStream(is), destination);
     }
 
+    /**
+     * Crash-safe write: streams to a sibling temp file, fsyncs, then atomically renames
+     * over the destination. A kill/power-loss can leave a stale temp file behind but never
+     * a truncated destination. Returns true only when the destination holds the new content.
+     * A null content deletes the destination.
+     */
+    public static boolean stringToFileAtomic(String content, File destination) {
+        if (destination == null) {
+            return false;
+        }
+
+        if (content == null) {
+            //noinspection ResultOfMethodCallIgnored
+            destination.delete();
+            return !destination.exists();
+        }
+
+        File parent = destination.getParentFile();
+        if (parent != null) {
+            //noinspection ResultOfMethodCallIgnored
+            parent.mkdirs();
+        }
+
+        File tmp = new File(destination.getParent(), destination.getName() + ".tmp");
+        streamToFile(toStream(content), tmp);
+
+        if (!content.equals(getFileContents(tmp))) {
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            return false;
+        }
+
+        //noinspection ResultOfMethodCallIgnored
+        boolean renamed = tmp.renameTo(destination);
+        if (!renamed) {
+            // Fallback for filesystems where renameTo fails: last-resort direct write.
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            streamToFile(toStream(content), destination);
+            renamed = content.equals(getFileContents(destination));
+        }
+
+        return renamed;
+    }
+
     public static String toString(InputStream in) {
         try {
             int bufsize = 8196;

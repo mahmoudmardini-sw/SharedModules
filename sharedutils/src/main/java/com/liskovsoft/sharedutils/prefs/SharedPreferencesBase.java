@@ -10,15 +10,15 @@ import com.liskovsoft.sharedutils.helpers.FileHelpers;
 import com.liskovsoft.sharedutils.mylogger.Log;
 
 import java.io.File;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class SharedPreferencesBase {
     private static final String TAG = SharedPreferencesBase.class.getSimpleName();
     private static final long PREF_MAX_SIZE_MB = 5;
     private final SharedPreferences mPrefs;
     private Context mContext;
-    private Map<String, Integer> mDataHashes;
+    private Map<String, String> mDataHashes;
 
     public SharedPreferencesBase(Context context, String prefName) {
         this(context, prefName, -1, false);
@@ -153,9 +153,8 @@ public class SharedPreferencesBase {
             data = getString(key, null);
             if (data != null) {
                 File destination = getStorageFile(key);
-                FileHelpers.stringToFile(data, destination);
-                // Only delete from SharedPreferences after successful file write
-                if (destination.exists() && destination.length() > 0) {
+                // Only delete from SharedPreferences after the content is verified on disk.
+                if (FileHelpers.stringToFileAtomic(data, destination)) {
                     putString(key, null);
                 }
             }
@@ -167,8 +166,20 @@ public class SharedPreferencesBase {
     final public void setData(String key, String data) {
         if (checkData(key, data)) {
             File destination = getStorageFile(key);
-            FileHelpers.stringToFile(data, destination);
+            FileHelpers.stringToFileAtomic(data, destination);
         }
+    }
+
+    /**
+     * Removes both the file and the legacy SharedPreferences copy.
+     */
+    final public void deleteData(String key) {
+        File destination = getStorageFile(key);
+        if (destination != null) {
+            //noinspection ResultOfMethodCallIgnored
+            destination.delete();
+        }
+        putString(key, null);
     }
 
     private File getStorageFile(String key) {
@@ -186,21 +197,25 @@ public class SharedPreferencesBase {
     }
 
     /**
-     * Check that the data has been modified.
+     * Check that the data has been modified. Stores the full content so the
+     * comparison is exact (no 32-bit hash collisions) and thread-safe.
      */
     private boolean checkData(String key, String data) {
         if (mDataHashes == null) {
-            mDataHashes = new HashMap<>();
+            mDataHashes = new ConcurrentHashMap<>();
         }
 
-        Integer oldHashCode = mDataHashes.get(key);
-        int newHashCode = data != null ? data.hashCode() : -1;
+        String oldData = mDataHashes.get(key);
 
-        if (oldHashCode != null && oldHashCode == newHashCode) {
+        if (oldData != null ? oldData.equals(data) : data == null) {
             return false;
         }
 
-        mDataHashes.put(key, newHashCode);
+        if (data != null) {
+            mDataHashes.put(key, data);
+        } else {
+            mDataHashes.remove(key);
+        }
 
         return true;
     }

@@ -1290,7 +1290,12 @@ public final class Helpers {
             return defaultValue;
         }
 
-        return Long.parseLong(numString);
+        try {
+            return Long.parseLong(numString);
+        } catch (NumberFormatException e) {
+            // Overflow: a 20-digit corrupt field passes the regex but not the parse.
+            return defaultValue;
+        }
     }
 
     public static float parseFloat(String numString) {
